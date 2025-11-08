@@ -5,9 +5,11 @@ A Visual Studio Code extension that helps you remember to review code that was p
 ## Features
 
 - **Automatic Detection**: Monitors your files for rapid text insertions (paste or AI-generated code)
-- **Visual Reminders**: Wraps detected code blocks in `//#region` comments with TODO reminders
-- **Highlighted Code**: Applies background highlighting to remind you to review the code
-- **Easy Dismissal**: Click the "Dismiss Review Reminder" CodeLens to remove the reminder once reviewed
+- **Visual Highlights**: Applies background highlighting to remind you to review the code
+- **Interactive Dismissal**: Simply move your cursor to a highlighted line to dismiss it
+- **Smart Region Splitting**: Regions automatically split when you dismiss middle lines
+- **Persistent Highlights**: Highlights survive VS Code restarts
+- **Easy Cleanup**: Click the "Dismiss All Review Highlights" CodeLens to remove entire regions
 - **Configurable**: Customize the minimum line count, detection threshold, and highlight color
 
 ## How It Works
@@ -19,9 +21,36 @@ The extension monitors text changes in your files. When it detects:
 
 It will automatically:
 
-1. Wrap the code in `//#region TODO: review generated/pasted code` and `//#endregion` comments
-2. Highlight the lines with a background color
-3. Add a CodeLens "Dismiss Review Reminder" button above the region
+1. Highlight the lines with a background color
+2. Add a "❌ Dismiss All Review Highlights" CodeLens button at the first highlighted line
+3. Save the highlights so they persist across sessions
+
+## Usage
+
+### Automatic Highlighting
+
+1. Paste or AI-generate a large block of code
+2. Lines are immediately highlighted
+3. CodeLens appears at the first highlighted line
+
+### Dismissing Highlights
+
+**Method 1: Move cursor** (dismiss individual lines)
+
+- Simply move your cursor to any highlighted line
+- That line is immediately unhighlighted
+- If you create a gap, the region splits into multiple regions
+
+**Method 2: Click CodeLens** (dismiss entire region)
+
+- Click "❌ Dismiss All Review Highlights" above the region
+- All highlights in that region are removed
+
+**Method 3: Command Palette**
+
+- Press `Ctrl+Shift+P`
+- Type "Dismiss Review Highlights"
+- Dismisses the region containing your cursor
 
 ## Configuration
 
@@ -35,29 +64,20 @@ You can customize the extension's behavior in your VS Code settings:
 
 1. Install the extension
 2. Write or paste code as usual
-3. When you paste or generate a large block of code, it will be automatically marked for review
-4. Review the code when you're ready
-5. Click "Dismiss Review Reminder" to remove the markers
+3. When you paste or generate a large block of code, it will be automatically highlighted
+4. Review the code at your convenience
+5. Move your cursor through the highlighted lines to dismiss them one-by-one, or
+6. Click "Dismiss All Review Highlights" to remove the entire region
 
 ## Supported Languages
 
-The extension supports multiple programming languages with appropriate region comment syntax:
-
-- TypeScript/JavaScript (and React variants)
-- C#
-- Python
-- Java
-- C/C++
-- PHP
-- Go
-- Rust
-- And more...
+The extension works with **all file types** - no language-specific configuration needed!
 
 ## Commands
 
-- `Paste Review Reminder: Dismiss Region` - Remove review markers from the current region
+- `Paste Review Reminder: Dismiss Review Highlights` - Remove highlights from the region containing your cursor
 
-You can also click the CodeLens "❌ Dismiss Review Reminder" that appears above each marked region.
+You can also click the CodeLens "❌ Dismiss All Review Highlights" that appears above each highlighted region.
 
 ## Development
 
