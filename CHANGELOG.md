@@ -1,9 +1,16 @@
 # Change Log
 
-All notable changes to the "automated-code-review-reminder" extension will be documented in this file.
+All notable changes to the "paste-review-reminder" extension will be documented in this file.
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+## [0.0.1] - Initial Release
 
-## [Unreleased]
+### Features
 
-- Initial release
+- Automatic detection of pasted or AI-generated code blocks
+- Configurable line count threshold (default: 20 lines)
+- Configurable character speed threshold (default: 110 chars/second)
+- Wraps detected code in //#region comments with TODO reminder
+- Background highlighting of code to review
+- CodeLens dismiss action for easy removal of reminders
+- Support for multiple programming languages
+- Configurable highlight color

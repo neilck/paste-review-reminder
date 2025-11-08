@@ -1,41 +1,61 @@
 {
-  "name": "automated-code-review-reminder",
-  "displayName": "Automated Code Review Reminder",
-  "description": "Reminder to review auto-generated code",
+  "name": "paste-review-reminder",
+  "displayName": "Paste Review Reminder",
+  "description": "Reminds you to review pasted or AI-generated code blocks",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.105.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "*"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "automated-code-review-reminder.helloWorld",
-        "title": "Hello World"
+        "command": "pasteReviewReminder.dismissRegion",
+        "title": "Dismiss Review Reminder"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Paste Review Reminder",
+      "properties": {
+        "pasteReviewReminder.minimumLines": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "description": "Minimum number of lines to trigger a review reminder"
+        },
+        "pasteReviewReminder.characterThreshold": {
+          "type": "number",
+          "default": 110,
+          "minimum": 1,
+          "description": "Characters per second threshold to detect paste/AI generation"
+        },
+        "pasteReviewReminder.highlightColor": {
+          "type": "string",
+          "default": "rgba(255, 200, 100, 0.15)",
+          "description": "Background color for highlighted regions"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src",
-    "test": "vscode-test"
+    "lint": "eslint src --ext ts"
   },
   "devDependencies": {
-    "@types/vscode": "^1.105.0",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@typescript-eslint/eslint-plugin": "^8.45.0",
-    "@typescript-eslint/parser": "^8.45.0",
-    "eslint": "^9.36.0",
-    "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2"
+    "@types/vscode": "^1.85.0",
+    "@types/node": "18.x",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3"
   }
 }
