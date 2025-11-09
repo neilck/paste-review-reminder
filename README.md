@@ -6,6 +6,14 @@ Never forget to review code pasted from other sources (like genAI), or AI stream
 
 ---
 
+## Screenshot
+
+Here's how Paste Review Reminder highlights areas for review in your editor:
+
+![Screenshot of Paste Review Reminder in action](screenshot.png)
+
+---
+
 ## Features
 
 - **Code Block Tracking:** Automatically tracks pasted or AI-generated code blocks in your workspace.
@@ -14,6 +22,27 @@ Never forget to review code pasted from other sources (like genAI), or AI stream
 - **Per-File Storage:** Saves blocks per file to file (`.pastereview.json`), allowing Git versioning.
 - **Checksum Validation:** Ensures saved blocks correspond to the current file content.
 - **Git-Friendly:** The saved manifest can be committed to source control.
+
+---
+
+## Block Tracking Logic
+
+The extension uses two distinct paths to determine whether a change constitutes a block of code requiring review:
+
+### 1. Direct Paste Detection
+
+This path detects a single, large content change that occurs instantly, which is characteristic of a **manual paste** operation.
+
+- If a single text change introduces more than the number of lines set by **`pasteReviewReminder.minimumPasteLines`** (default: 20 lines), the block is **immediately tracked and highlighted**.
+
+### 2. Fast Typing / Streaming AI Detection
+
+This path tracks continuous, rapid changes over a short duration, which is characteristic of **AI code generation streaming**.
+
+- The extension tracks the total number of characters added and the duration of continuous typing activity.
+- If, after a brief pause (100ms timeout), **BOTH** conditions are met, the block is tracked:
+  - **Speed:** The calculated typing speed exceeds the **`pasteReviewReminder.typingSpeedThreshold`** (default: 110 characters/sec).
+  - **Size:** The total number of affected lines exceeds the **`pasteReviewReminder.minimumStreamingLines`** (default: 20 lines).
 
 ---
 
