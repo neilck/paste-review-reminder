@@ -32,9 +32,6 @@ export class DecorationManager {
 
     return vscode.window.createTextEditorDecorationType({
       backgroundColor: highlightColor,
-      borderWidth: "1px",
-      borderStyle: "solid",
-      borderColor: new vscode.ThemeColor("editorWarning.foreground"),
       overviewRulerColor: new vscode.ThemeColor("editorWarning.foreground"),
       overviewRulerLane: vscode.OverviewRulerLane.Right,
       isWholeLine: true,
