@@ -26,6 +26,16 @@ export function activate(context: vscode.ExtensionContext): void {
   // Register event listeners
   registerEventListeners(context);
 
+  // --- Handle already open documents ---
+  for (const editor of vscode.window.visibleTextEditors) {
+    const document = editor.document;
+
+    const savedRegions = saveManager.getRegions(document.uri);
+    if (savedRegions && savedRegions.length > 0) {
+      regionManager.setRegionsForDocument(document.uri, savedRegions);
+    }
+  }
+
   // Update decorations for currently visible editors
   decorationManager.updateAllDecorations();
 
