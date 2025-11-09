@@ -131,6 +131,17 @@ function handleSelectionChange(
   let regionsModified = false;
 
   for (const selection of event.selections) {
+    const selectionLineCount = selection.end.line - selection.start.line + 1;
+    const isEntireDocument =
+      selection.start.line === 0 &&
+      selection.end.line === document.lineCount - 1;
+
+    // Ignore very large selections (like Select All)
+    // Skip if: entire document OR more than 100 lines
+    if (isEntireDocument || selectionLineCount > 100) {
+      continue;
+    }
+
     // Create a range for the line(s) the cursor is on
     const range = new vscode.Range(
       selection.start.line,
