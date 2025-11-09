@@ -3,6 +3,10 @@
   "displayName": "Paste Review Reminder",
   "description": "Reminds you to review pasted or AI-generated code blocks",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neilck/paste-review-reminder.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -10,16 +14,11 @@
     "Other"
   ],
   "activationEvents": [
-    "*"
+    "onStartupFinished",
+    "onTextEditor:*"
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "pasteReviewReminder.dismissRegion",
-        "title": "Dismiss Review Reminder"
-      }
-    ],
     "configuration": {
       "title": "Paste Review Reminder",
       "properties": {
