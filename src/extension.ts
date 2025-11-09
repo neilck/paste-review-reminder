@@ -1,77 +1,172 @@
 import * as vscode from "vscode";
-import { ChangeDetector } from "./changeDetector";
-import { RegionManager } from "./region";
+import { RegionManager } from "./regionManager";
+import { ChangeTracker } from "./changeTracker";
+import { DecorationManager } from "./decorationManager";
 
-export function activate(context: vscode.ExtensionContext) {
-  console.log("Paste Review Reminder extension is now active");
+let regionManager: RegionManager;
+let changeTracker: ChangeTracker;
+let decorationManager: DecorationManager;
 
-  const regionManager = new RegionManager(context);
-  const changeDetector = new ChangeDetector(regionManager);
-  context.subscriptions.push(changeDetector);
+export function activate(context: vscode.ExtensionContext): void {
+  console.log("Paste Review Reminder extension activated");
 
-  // Restore highlights from previous session
-  regionManager.restoreHighlights();
+  // Initialize managers
+  regionManager = new RegionManager();
+  changeTracker = new ChangeTracker(regionManager);
+  decorationManager = new DecorationManager(regionManager);
 
-  // Listen for document changes (optional: integrate ChangeDetector here)
-  const documentChangeListener = vscode.workspace.onDidChangeTextDocument(
-    (event) => {
-      changeDetector.handleDocumentChange(event.document, event);
-    }
-  );
-  context.subscriptions.push(documentChangeListener);
+  // Set up callback for when regions are created
+  changeTracker.setOnRegionsCreated(() => {
+    decorationManager.updateAllDecorations();
+  });
 
-  // Auto-dismiss when cursor moves into a region
-  const selectionChangeListener = vscode.window.onDidChangeTextEditorSelection(
-    (event) => {
-      if (event.selections.length > 0) {
-        const position = event.selections[0].active;
-        regionManager.checkCursorAndDismiss(event.textEditor, position);
-      }
-    }
-  );
+  // Register event listeners
+  registerEventListeners(context);
 
-  // Register dismiss single region command (via CodeLens)
-  const dismissRegionCommand = vscode.commands.registerCommand(
-    "pasteReviewReminder.dismissRegion",
-    async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
-      const position = editor.selection.active;
-      await regionManager.dismissRegionAtPosition(editor, position);
-    }
-  );
+  // Update decorations for currently visible editors
+  decorationManager.updateAllDecorations();
 
-  // Register dismiss all regions command (global CodeLens)
-  const dismissAllCommand = vscode.commands.registerCommand(
-    "pasteReviewReminder.dismissAllRegions",
-    async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
-      await regionManager.dismissAllRegions(editor);
-    }
-  );
+  // Register commands
+  registerCommands(context);
+}
 
-  // Register CodeLens provider
-  const codeLensProvider = vscode.languages.registerCodeLensProvider(
-    { scheme: "file" },
-    {
-      provideCodeLenses(document: vscode.TextDocument) {
-        return regionManager.provideCodeLenses(document);
-      },
-    }
-  );
-
-  // Add subscriptions to dispose when extension is deactivated
+function registerEventListeners(context: vscode.ExtensionContext): void {
+  // Listen for text document changes
   context.subscriptions.push(
-    documentChangeListener,
-    selectionChangeListener,
-    dismissRegionCommand,
-    dismissAllCommand,
-    codeLensProvider,
-    regionManager
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      handleTextDocumentChange(event);
+    })
+  );
+
+  // Listen for cursor position changes
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection((event) => {
+      handleSelectionChange(event);
+    })
+  );
+
+  // Listen for active editor changes
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) {
+        decorationManager.updateDecorations(editor);
+      }
+    })
+  );
+
+  // Listen for visible editors changes
+  context.subscriptions.push(
+    vscode.window.onDidChangeVisibleTextEditors(() => {
+      decorationManager.updateAllDecorations();
+    })
+  );
+
+  // Listen for document close
+  context.subscriptions.push(
+    vscode.workspace.onDidCloseTextDocument((document) => {
+      changeTracker.stopTracking(document.uri);
+      regionManager.clearDocument(document.uri);
+    })
   );
 }
 
-export function deactivate() {
-  console.log("Paste Review Reminder extension deactivated");
+/**
+ * Handle text document changes
+ * IMPORTANT: Process region removal BEFORE tracking new changes
+ */
+function handleTextDocumentChange(event: vscode.TextDocumentChangeEvent): void {
+  const document = event.document;
+
+  console.log("handleTextDocumentChange called.");
+
+  // STEP 1: Remove lines from regions for modifications/deletions
+  // This must happen BEFORE tracking new changes
+  let regionsModified = false;
+  for (const change of event.contentChanges) {
+    // For any change (addition, deletion, or modification), remove affected lines from regions
+    // This handles both line modifications and deletions
+    const wasModified = regionManager.removeLinesFromRegions(
+      document.uri,
+      change.range
+    );
+    if (wasModified) {
+      regionsModified = true;
+    }
+
+    // Update region line numbers if lines were added/removed
+    regionManager.updateRegionsAfterEdit(
+      document.uri,
+      change.range,
+      change.rangeLength,
+      change.text
+    );
+  }
+
+  // STEP 2: Track changes for potential new regions
+  // This happens AFTER region removal to avoid immediate deletion
+  changeTracker.processChange(event);
+
+  // STEP 3: Update decorations if regions were modified
+  if (regionsModified) {
+    const editor = vscode.window.activeTextEditor;
+    if (editor && editor.document === document) {
+      decorationManager.updateDecorations(editor);
+    }
+  }
+
+  // Note: New regions from tracking will be created after the timeout,
+  // and decorations will be updated via the callback mechanism
+}
+
+/**
+ * Handle cursor selection changes
+ * Remove lines from regions when cursor moves to them
+ */
+function handleSelectionChange(
+  event: vscode.TextEditorSelectionChangeEvent
+): void {
+  const editor = event.textEditor;
+  const document = editor.document;
+
+  let regionsModified = false;
+
+  for (const selection of event.selections) {
+    // Create a range for the line(s) the cursor is on
+    const range = new vscode.Range(
+      selection.start.line,
+      0,
+      selection.end.line,
+      Number.MAX_SAFE_INTEGER
+    );
+
+    const wasModified = regionManager.removeLinesFromRegions(
+      document.uri,
+      range
+    );
+    if (wasModified) {
+      regionsModified = true;
+    }
+  }
+
+  if (regionsModified) {
+    decorationManager.updateDecorations(editor);
+  }
+}
+
+function registerCommands(context: vscode.ExtensionContext): void {
+  // Register dismiss command (for future CodeLens integration)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pasteReviewReminder.dismissRegion", () => {
+      // This will be implemented when CodeLens is added
+      vscode.window.showInformationMessage(
+        "Region dismiss feature coming soon!"
+      );
+    })
+  );
+}
+
+export function deactivate(): void {
+  changeTracker?.clearAll();
+  regionManager?.clearAll();
+  decorationManager?.dispose();
 }
