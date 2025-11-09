@@ -6,6 +6,9 @@ const TRACKING_TIMEOUT = 100; // milliseconds
 
 /**
  * Tracks text changes to detect pasted or AI-generated code
+ * Two detection paths:
+ * 1. Immediate paste detection (>minimumPasteLines in single change)
+ * 2. Fast typing detection (>typingSpeedThreshold chars/sec AND >minimumStreamingLines over time)
  */
 export class ChangeTracker {
   private trackingStates: Map<string, ChangeTrackingState> = new Map();
@@ -26,16 +29,17 @@ export class ChangeTracker {
   private getConfig() {
     const config = vscode.workspace.getConfiguration("pasteReviewReminder");
     return {
-      speedThreshold: config.get<number>("characterThreshold", 110),
-      sizeThreshold: config.get<number>("minimumLines", 20),
+      minimumPasteLines: config.get<number>("minimumPasteLines", 20),
+      minimumStreamingLines: config.get<number>("minimumStreamingLines", 20),
+      typingSpeedThreshold: config.get<number>("typingSpeedThreshold", 110),
     };
   }
 
   /**
    * Process a text document change event
+   * Checks for both paste and fast typing
    */
   public processChange(event: vscode.TextDocumentChangeEvent): void {
-    console.log("processChange called.");
     const document = event.document;
     const docKey = document.uri.toString();
 
@@ -45,25 +49,65 @@ export class ChangeTracker {
         continue;
       }
 
-      this.trackChange(docKey, document.uri, change);
+      // PATH 1: Check for immediate paste (>20 lines in single change)
+      if (this.isPaste(change)) {
+        this.handlePaste(document.uri, change);
+        // Don't add paste to typing tracking
+        continue;
+      }
+
+      // PATH 2: Track for fast typing detection
+      this.trackForFastTyping(docKey, document.uri, change);
     }
   }
 
   /**
-   * Track a single content change
+   * Check if a change is a paste (>minimumPasteLines in single change)
    */
-  private trackChange(
+  private isPaste(change: vscode.TextDocumentContentChangeEvent): boolean {
+    const { minimumPasteLines } = this.getConfig();
+    const lineCount = change.text.split("\n").length - 1;
+    return lineCount > minimumPasteLines;
+  }
+
+  /**
+   * Handle paste detection - create regions immediately
+   */
+  private handlePaste(
+    documentUri: vscode.Uri,
+    change: vscode.TextDocumentContentChangeEvent
+  ): void {
+    const { minimumPasteLines } = this.getConfig();
+    const startLine = change.range.start.line;
+    const lineCount = change.text.split("\n").length - 1;
+    const endLine = startLine + lineCount;
+
+    // Create lines set for region creation
+    const lines = new Set<number>();
+    for (let line = startLine; line <= endLine; line++) {
+      lines.add(line);
+    }
+
+    // Create regions immediately (no timeout)
+    this.createRegionsFromLines(documentUri, lines, minimumPasteLines);
+
+    // Notify that regions were created
+    this.onRegionsCreated?.();
+  }
+
+  /**
+   * Track a change for fast typing detection
+   */
+  private trackForFastTyping(
     docKey: string,
     documentUri: vscode.Uri,
     change: vscode.TextDocumentContentChangeEvent
   ): void {
-    console.log("trackChange called.");
     const now = Date.now();
     let state = this.trackingStates.get(docKey);
 
     // Start tracking if not currently tracking
     if (!state || !state.isTracking) {
-      console.log("tracking started.");
       state = {
         isTracking: true,
         startTime: now,
@@ -91,9 +135,6 @@ export class ChangeTracker {
       state.affectedLines.add(line);
     }
 
-    console.log("tracking updated", JSON.stringify(state, null, 2));
-    console.log("affected lines", Array.from(state.affectedLines));
-
     // Set timeout to end tracking
     state.timeoutId = setTimeout(() => {
       this.endTracking(docKey, documentUri);
@@ -101,38 +142,26 @@ export class ChangeTracker {
   }
 
   /**
-   * End tracking and check if thresholds were exceeded
+   * End tracking and check if fast typing thresholds were exceeded
    */
   private endTracking(docKey: string, documentUri: vscode.Uri): void {
-    console.log("endTracking called.");
     const state = this.trackingStates.get(docKey);
     if (!state || !state.isTracking) {
       return;
     }
 
-    const { speedThreshold, sizeThreshold } = this.getConfig();
+    const { typingSpeedThreshold, minimumStreamingLines } = this.getConfig();
     const duration = (state.lastChangeTime - state.startTime) / 1000; // in seconds
-    console.log(
-      "speed calc",
-      state.lastChangeTime,
-      state.startTime,
-      duration,
-      state.totalCharacters
-    );
-    const speed = duration > 0 ? state.totalCharacters / duration : Infinity;
+    const speed = duration > 0 ? state.totalCharacters / duration : 0;
     const lineCount = state.affectedLines.size;
 
-    console.log(
-      "threshold check",
-      speed,
-      speedThreshold,
-      lineCount,
-      sizeThreshold
-    );
-    // Check if thresholds exceeded
-    if (speed > speedThreshold && lineCount > sizeThreshold) {
-      console.log("creating region");
-      this.createRegionsFromLines(documentUri, state.affectedLines);
+    // Check if BOTH thresholds exceeded for fast typing
+    if (speed > typingSpeedThreshold && lineCount > minimumStreamingLines) {
+      this.createRegionsFromLines(
+        documentUri,
+        state.affectedLines,
+        minimumStreamingLines
+      );
       // Notify that regions were created
       this.onRegionsCreated?.();
     }
@@ -146,10 +175,12 @@ export class ChangeTracker {
   /**
    * Create regions from a set of line numbers
    * Combines consecutive lines into contiguous regions
+   * Only creates regions that meet the minimum size threshold
    */
   private createRegionsFromLines(
     documentUri: vscode.Uri,
-    lines: Set<number>
+    lines: Set<number>,
+    minRegionSize: number
   ): void {
     if (lines.size === 0) {
       return;
@@ -169,15 +200,21 @@ export class ChangeTracker {
         // Extend current region
         regionEnd = currentLine;
       } else {
-        // Save current region and start new one
-        this.regionManager.addRegion(documentUri, regionStart, regionEnd);
+        // Save current region if it meets minimum size
+        const regionSize = regionEnd - regionStart + 1;
+        if (regionSize > minRegionSize) {
+          this.regionManager.addRegion(documentUri, regionStart, regionEnd);
+        }
         regionStart = currentLine;
         regionEnd = currentLine;
       }
     }
 
-    // Add the last region
-    this.regionManager.addRegion(documentUri, regionStart, regionEnd);
+    // Add the last region if it meets minimum size
+    const regionSize = regionEnd - regionStart + 1;
+    if (regionSize > minRegionSize) {
+      this.regionManager.addRegion(documentUri, regionStart, regionEnd);
+    }
   }
 
   /**

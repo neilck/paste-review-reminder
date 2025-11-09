@@ -23,17 +23,23 @@
     "configuration": {
       "title": "Paste Review Reminder",
       "properties": {
-        "pasteReviewReminder.minimumLines": {
+        "pasteReviewReminder.minimumPasteLines": {
           "type": "number",
           "default": 20,
           "minimum": 1,
-          "description": "Minimum number of lines to trigger a review reminder"
+          "description": "Minimum lines to trigger highlighting for pasted code"
         },
-        "pasteReviewReminder.characterThreshold": {
+        "pasteReviewReminder.minimumStreamingLines": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "description": "Minimum lines to trigger highlighting for fast typing/AI streaming"
+        },
+        "pasteReviewReminder.typingSpeedThreshold": {
           "type": "number",
           "default": 110,
           "minimum": 1,
-          "description": "Characters per second threshold to detect paste/AI generation"
+          "description": "Characters per second threshold to detect fast typing (for AI completions)"
         },
         "pasteReviewReminder.highlightColor": {
           "type": "string",
