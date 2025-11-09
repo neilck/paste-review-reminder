@@ -24,13 +24,11 @@ export class SaveManager {
 
   constructor(
     private context: vscode.ExtensionContext,
-    manifestFileName = "regions.manifest.json"
+    manifestFileName = ".pastereview.json"
   ) {
-    // Store in extension global storage folder
-    this.manifestPath = path.join(
-      context.globalStorageUri.fsPath,
-      manifestFileName
-    );
+    const workspacePath =
+      vscode.workspace.workspaceFolders?.[0].uri.fsPath || "";
+    this.manifestPath = path.join(workspacePath, manifestFileName);
     this.loadManifest();
   }
 
