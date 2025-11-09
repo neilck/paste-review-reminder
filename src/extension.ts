@@ -68,6 +68,19 @@ function registerEventListeners(context: vscode.ExtensionContext): void {
       regionManager.clearDocument(document.uri);
     })
   );
+
+  // Listen for file rename (before it happens)
+  context.subscriptions.push(
+    vscode.workspace.onWillRenameFiles(async (event) => {
+      for (const file of event.files) {
+        const { oldUri, newUri } = file;
+        regionManager.updateDocumentUri(oldUri, newUri);
+        console.log(
+          `Updated region URIs from ${oldUri.fsPath} → ${newUri.fsPath}`
+        );
+      }
+    })
+  );
 }
 
 /**

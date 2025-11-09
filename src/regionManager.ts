@@ -173,4 +173,26 @@ export class RegionManager {
       }
     }
   }
+
+  /**
+   * Update document URI for all regions when a file is renamed
+   */
+  public updateDocumentUri(oldUri: vscode.Uri, newUri: vscode.Uri): void {
+    const oldKey = oldUri.toString();
+    const newKey = newUri.toString();
+
+    const regions = this.regions.get(oldKey);
+    if (!regions) {
+      return;
+    }
+
+    // Update each region's document reference
+    for (const region of regions) {
+      region.document = newUri;
+    }
+
+    // Move to new key and remove the old entry
+    this.regions.set(newKey, regions);
+    this.regions.delete(oldKey);
+  }
 }
