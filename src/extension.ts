@@ -102,9 +102,6 @@ function registerEventListeners(context: vscode.ExtensionContext): void {
       for (const file of event.files) {
         const { oldUri, newUri } = file;
         regionManager.updateDocumentUri(oldUri, newUri);
-        console.log(
-          `Updated region URIs from ${oldUri.fsPath} → ${newUri.fsPath}`
-        );
       }
     })
   );
@@ -151,8 +148,6 @@ function handleDocumentSave(document: vscode.TextDocument): void {
  */
 function handleTextDocumentChange(event: vscode.TextDocumentChangeEvent): void {
   const document = event.document;
-
-  console.log("handleTextDocumentChange called.");
 
   // STEP 1: Remove lines from regions for modifications/deletions
   // This must happen BEFORE tracking new changes
