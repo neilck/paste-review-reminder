@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import { RegionManager } from "./regionManager";
+import { SaveManager } from "./saveManager";
 import { ChangeTracker } from "./changeTracker";
 import { DecorationManager } from "./decorationManager";
 
 let regionManager: RegionManager;
+let saveManager: SaveManager;
 let changeTracker: ChangeTracker;
 let decorationManager: DecorationManager;
 
@@ -12,6 +14,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Initialize managers
   regionManager = new RegionManager();
+  saveManager = new SaveManager(context);
   changeTracker = new ChangeTracker(regionManager);
   decorationManager = new DecorationManager(regionManager);
 
@@ -31,10 +34,24 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 function registerEventListeners(context: vscode.ExtensionContext): void {
+  // Listen for document opens
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenTextDocument((document) => {
+      handleDocumentOpen(document);
+    })
+  );
+
   // Listen for text document changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
       handleTextDocumentChange(event);
+    })
+  );
+
+  // Listen for document saves
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      handleDocumentSave(document);
     })
   );
 
@@ -81,6 +98,41 @@ function registerEventListeners(context: vscode.ExtensionContext): void {
       }
     })
   );
+}
+
+/**
+ * Handle a document being opened.
+ * Load saved regions if checksum matches, otherwise clear regions and update manifest.
+ */
+function handleDocumentOpen(document: vscode.TextDocument): void {
+  const savedRegions = saveManager.getRegions(document.uri);
+
+  if (!savedRegions || savedRegions.length === 0) {
+    return;
+  }
+
+  // Validate checksum
+  const content = document.getText();
+  const matches = saveManager.hasMatchingChecksum(document.uri, content);
+
+  if (matches) {
+    // Restore regions
+    regionManager.setRegionsForDocument(document.uri, savedRegions);
+  } else {
+    // Checksum mismatch → remove regions immediately
+    regionManager.clearDocument(document.uri);
+    // Save manifest immediately to reflect removal
+    saveManager.saveFileRegions(document.uri, []);
+  }
+}
+
+/**
+ * Handle document being saved.
+ * Save current regions for that file to the manifest.
+ */
+function handleDocumentSave(document: vscode.TextDocument): void {
+  const regions = regionManager.getRegions(document.uri);
+  saveManager.saveFileRegions(document.uri, regions);
 }
 
 /**

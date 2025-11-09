@@ -195,4 +195,15 @@ export class RegionManager {
     this.regions.set(newKey, regions);
     this.regions.delete(oldKey);
   }
+
+  /**
+   * Replace regions for a document.
+   * Useful when restoring from saved manifest after checksum validation.
+   */
+  public setRegionsForDocument(document: vscode.Uri, regions: Region[]): void {
+    this.regions.set(
+      document.toString(),
+      regions.map((r) => ({ ...r, document }))
+    );
+  }
 }
