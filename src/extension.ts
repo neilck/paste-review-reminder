@@ -1,3 +1,5 @@
+// src/extension.ts
+
 import * as vscode from "vscode";
 import { RegionManager } from "./regionManager";
 import { SaveManager } from "./saveManager";
@@ -7,6 +9,7 @@ import { RegionCodeLensProvider } from "./codeLensProvider";
 import { SaveScheduler } from "./extension-helpers/saveScheduler";
 import { registerEventHandlers } from "./extension-helpers/eventHandlers";
 import { registerCommandHandlers } from "./extension-helpers/commandHandlers";
+import { ShadowTextManager } from "./extension-helpers/shadowTextManager"; // [NEW] Import the new manager
 
 let regionManager: RegionManager;
 let saveManager: SaveManager;
@@ -14,13 +17,14 @@ let changeTracker: ChangeTracker;
 let decorationManager: DecorationManager;
 let codeLensProvider: RegionCodeLensProvider;
 let saveScheduler: SaveScheduler;
+let shadowTextManager: ShadowTextManager;
 
 export function activate(context: vscode.ExtensionContext): void {
   console.log("Paste Review Reminder extension activated");
 
-  // Initialize managers
   regionManager = new RegionManager();
   saveManager = new SaveManager(context);
+  shadowTextManager = new ShadowTextManager();
   changeTracker = new ChangeTracker(regionManager);
   decorationManager = new DecorationManager(regionManager);
   codeLensProvider = new RegionCodeLensProvider(regionManager);
@@ -39,20 +43,22 @@ export function activate(context: vscode.ExtensionContext): void {
     saveScheduler.scheduleSave(uri, true); // Immediate save for detected paste/stream
   });
 
-  // Register event listeners
   registerEventHandlers(
     context,
     regionManager,
     saveManager,
     changeTracker,
     decorationManager,
-    saveScheduler
+    saveScheduler,
+    shadowTextManager
   );
 
   // Register command handlers
   registerCommandHandlers(context, regionManager, saveScheduler);
 
   // --- Handle already open documents ---
+  // The ShadowTextManager's constructor already handles creating initial shadows for open documents.
+  // This loop remains for restoring saved regions from the manifest.
   for (const editor of vscode.window.visibleTextEditors) {
     const document = editor.document;
 
@@ -73,4 +79,5 @@ export function deactivate(): void {
   regionManager?.dispose();
   decorationManager?.dispose();
   codeLensProvider?.dispose();
+  shadowTextManager?.dispose();
 }

@@ -1,9 +1,16 @@
+// src/extension-helpers/eventHandlers.ts
+
 import * as vscode from "vscode";
 import type { SaveScheduler } from "./saveScheduler";
 import type { RegionManager } from "../regionManager";
 import type { SaveManager } from "../saveManager";
 import type { ChangeTracker } from "../changeTracker";
 import type { DecorationManager } from "../decorationManager";
+import type { ShadowTextManager } from "./shadowTextManager"; // [NEW] Import the new manager
+
+// [NEW] Feature flag for the new functionality.
+// We will use this later in changeTracker.ts. For now, it's just declared here.
+export const ENABLE_REVIEWED_PASTE_CHECK = true;
 
 /**
  * Registers and handles all document and editor events
@@ -14,17 +21,20 @@ export function registerEventHandlers(
   saveManager: SaveManager,
   changeTracker: ChangeTracker,
   decorationManager: DecorationManager,
-  saveScheduler: SaveScheduler
+  saveScheduler: SaveScheduler,
+  shadowTextManager: ShadowTextManager
 ): void {
   // Listen for document opens
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument((document) => {
+      // [UPDATED] Pass shadowTextManager to the handler
       handleDocumentOpen(
         document,
         regionManager,
         saveManager,
         decorationManager,
-        saveScheduler
+        saveScheduler,
+        shadowTextManager
       );
     })
   );
@@ -32,11 +42,13 @@ export function registerEventHandlers(
   // Listen for text document changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
+      // [UPDATED] Pass shadowTextManager to the handler
       handleTextDocumentChange(
         event,
         regionManager,
         changeTracker,
-        saveScheduler
+        saveScheduler,
+        shadowTextManager
       );
     })
   );
@@ -74,11 +86,13 @@ export function registerEventHandlers(
   // Listen for document close
   context.subscriptions.push(
     vscode.workspace.onDidCloseTextDocument((document) => {
+      // [UPDATED] Pass shadowTextManager to the handler
       handleDocumentClose(
         document,
         changeTracker,
         regionManager,
-        saveScheduler
+        saveScheduler,
+        shadowTextManager
       );
     })
   );
@@ -86,7 +100,14 @@ export function registerEventHandlers(
   // Listen for file rename (before it happens)
   context.subscriptions.push(
     vscode.workspace.onWillRenameFiles(async (event) => {
-      handleFileRename(event, regionManager, saveManager, saveScheduler);
+      // [UPDATED] Pass shadowTextManager to the handler
+      handleFileRename(
+        event,
+        regionManager,
+        saveManager,
+        saveScheduler,
+        shadowTextManager
+      );
     })
   );
 }
@@ -94,14 +115,19 @@ export function registerEventHandlers(
 /**
  * Handle a document being opened.
  * Load saved regions if checksum matches, otherwise clear regions and update manifest.
+ * Also, ensure the shadow text manager is aware of the opened document.
  */
 function handleDocumentOpen(
   document: vscode.TextDocument,
   regionManager: RegionManager,
   saveManager: SaveManager,
   decorationManager: DecorationManager,
-  saveScheduler: SaveScheduler
+  saveScheduler: SaveScheduler,
+  shadowTextManager: ShadowTextManager // [NEW] Accept manager
 ): void {
+  // [NEW] Inform the shadow manager that a document has been opened.
+  shadowTextManager.onDidOpenTextDocument(document);
+
   const savedRegions = saveManager.getRegions(document.uri);
 
   if (!savedRegions || savedRegions.length === 0) {
@@ -123,16 +149,13 @@ function handleDocumentOpen(
       decorationManager.updateDecorations(editor);
     }
   } else {
-    // Checksum mismatch → remove regions immediately
     regionManager.clearDocument(document.uri);
-    // Save manifest immediately to reflect removal
     saveScheduler.scheduleSave(document.uri, true);
   }
 }
 
 /**
  * Handle document being saved.
- * Save current regions for that file to the manifest immediately.
  */
 function handleDocumentSave(
   document: vscode.TextDocument,
@@ -143,23 +166,24 @@ function handleDocumentSave(
 
 /**
  * Handle text document changes
- * IMPORTANT: Process region removal BEFORE tracking new changes
  */
 function handleTextDocumentChange(
   event: vscode.TextDocumentChangeEvent,
   regionManager: RegionManager,
   changeTracker: ChangeTracker,
-  saveScheduler: SaveScheduler
+  saveScheduler: SaveScheduler,
+  shadowTextManager: ShadowTextManager
 ): void {
   const document = event.document;
 
-  let regionsModified = false;
+  // Step 1: Capture the state of the document and regions *before* any changes are processed.
+  const oldText = shadowTextManager.getOldTextAndRefreshShadow(event);
+  const oldRegions = regionManager.getRegions(document.uri); // Snapshot the regions!
 
-  // STEP 1: Remove lines from regions for modifications/deletions
-  // This must happen BEFORE tracking new changes
+  // Step 2: Process region modifications/deletions based on the change's range.
+  // This correctly handles the "deletion" part of a replacement paste first.
+  let regionsModified = false;
   for (const change of event.contentChanges) {
-    // For any change (addition, deletion, or modification), remove affected lines from regions
-    // This handles both line modifications and deletions
     const wasModified = regionManager.removeLinesFromRegions(
       document.uri,
       change.range
@@ -168,7 +192,6 @@ function handleTextDocumentChange(
       regionsModified = true;
     }
 
-    // Update region line numbers if lines were added/removed
     regionManager.updateRegionsAfterEdit(
       document.uri,
       change.range,
@@ -177,23 +200,18 @@ function handleTextDocumentChange(
     );
   }
 
-  // STEP 2: Track changes for potential new regions
-  // This happens AFTER region removal to avoid immediate deletion
-  changeTracker.processChange(event);
+  // Step 3: Track changes for potential new regions, passing the "before" state snapshots.
+  // This correctly handles the "insertion" part of a replacement paste.
+  changeTracker.processChange(event, oldText, oldRegions); // Pass the snapshotted oldRegions
 
-  // STEP 3: Schedule debounced save if regions were modified
+  // Step 4: Schedule a debounced save if regions were modified by the deletion step.
   if (regionsModified) {
     saveScheduler.scheduleSave(document.uri, false);
   }
-
-  // Note: Decorations are automatically updated via regionManager events
-  // New regions from tracking will be created after the timeout,
-  // and decorations will be updated via the event mechanism
 }
 
 /**
  * Handle cursor selection changes
- * Remove lines from regions when cursor moves to them
  */
 function handleSelectionChange(
   event: vscode.TextEditorSelectionChangeEvent,
@@ -206,17 +224,14 @@ function handleSelectionChange(
   let regionsModified = false;
 
   for (const selection of event.selections) {
-    const selectionLineCount = selection.end.line - selection.start.line + 1;
-    const isEntireDocument =
-      selection.start.line === 0 &&
-      selection.end.line === document.lineCount - 1;
-
     // Ignore very large selections (like Select All)
-    if (isEntireDocument) {
+    if (
+      selection.start.line === 0 &&
+      selection.end.line >= document.lineCount - 2
+    ) {
       continue;
     }
 
-    // Create a range for the line(s) the cursor is on
     const range = new vscode.Range(
       selection.start.line,
       0,
@@ -237,8 +252,6 @@ function handleSelectionChange(
   if (regionsModified) {
     saveScheduler.scheduleSave(document.uri, false);
   }
-
-  // Note: Decorations are automatically updated via regionManager events
 }
 
 /**
@@ -248,8 +261,12 @@ function handleDocumentClose(
   document: vscode.TextDocument,
   changeTracker: ChangeTracker,
   regionManager: RegionManager,
-  saveScheduler: SaveScheduler
+  saveScheduler: SaveScheduler,
+  shadowTextManager: ShadowTextManager // [NEW] Accept manager
 ): void {
+  // Inform the shadow manager to clean up the closed document.
+  shadowTextManager.onDidCloseTextDocument(document);
+
   changeTracker.stopTracking(document.uri);
   regionManager.clearDocument(document.uri);
   saveScheduler.clearTimer(document.uri);
@@ -262,11 +279,13 @@ function handleFileRename(
   event: vscode.FileWillRenameEvent,
   regionManager: RegionManager,
   saveManager: SaveManager,
-  saveScheduler: SaveScheduler
+  saveScheduler: SaveScheduler,
+  shadowTextManager: ShadowTextManager
 ): void {
   for (const file of event.files) {
     const { oldUri, newUri } = file;
-    // Update both runtime state and saved manifest
+    shadowTextManager.updateDocumentUri(oldUri, newUri);
+
     regionManager.updateDocumentUri(oldUri, newUri);
     saveManager.updateFilePath(oldUri, newUri);
     // Save immediately after rename

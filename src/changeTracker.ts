@@ -1,8 +1,37 @@
+// src/changeTracker.ts
+
 import * as vscode from "vscode";
+import { Region } from "./types";
 import type { ChangeTrackingState } from "./types";
 import type { RegionManager } from "./regionManager";
+import { ENABLE_REVIEWED_PASTE_CHECK } from "./extension-helpers/eventHandlers"; // [NEW] Import the feature flag
+import { start } from "repl";
 
 const TRACKING_TIMEOUT = 100; // milliseconds
+
+// Helper function to generate the contextual key
+function getContextualKey(lines: string[], index: number): string {
+  const lineContent = lines[index];
+
+  // Define the window size for context. 5 lines above and 5 below.
+  const contextWindow = 5;
+
+  // Get the 'above' context, handling the top-of-file boundary case
+  const aboveStart = Math.max(0, index - contextWindow);
+  const aboveLines = lines.slice(aboveStart, index);
+  const aboveContext = aboveLines.join("\n");
+
+  // Get the 'below' context, handling the end-of-file boundary case
+  const belowEnd = Math.min(lines.length, index + 1 + contextWindow);
+  const belowLines = lines.slice(index + 1, belowEnd);
+  const belowContext = belowLines.join("\n");
+
+  // Using character count as you suggested is fast and effective.
+  const aboveHash = aboveContext.length;
+  const belowHash = belowContext.length;
+
+  return `${lineContent}-${aboveHash}-${belowHash}`;
+}
 
 /**
  * Tracks text changes to detect pasted or AI-generated code
@@ -39,24 +68,25 @@ export class ChangeTracker {
    * Process a text document change event
    * Checks for both paste and fast typing
    */
-  public processChange(event: vscode.TextDocumentChangeEvent): void {
+  public processChange(
+    event: vscode.TextDocumentChangeEvent,
+    oldText?: string,
+    oldRegions?: Region[]
+  ): void {
     const document = event.document;
     const docKey = document.uri.toString();
 
     for (const change of event.contentChanges) {
-      // Only track additions, not deletions
       if (change.text === "") {
         continue;
       }
 
-      // PATH 1: Check for immediate paste (>20 lines in single change)
       if (this.isPaste(change)) {
-        this.handlePaste(document.uri, change);
-        // Don't add paste to typing tracking
+        // [UPDATED] Pass the document object, oldText, and oldRegions snapshot to the handler
+        this.handlePaste(document, change, oldText, oldRegions);
         continue;
       }
 
-      // PATH 2: Track for fast typing detection
       this.trackForFastTyping(docKey, document.uri, change);
     }
   }
@@ -66,34 +96,96 @@ export class ChangeTracker {
    */
   private isPaste(change: vscode.TextDocumentContentChangeEvent): boolean {
     const { minimumPasteLines } = this.getConfig();
-    const lineCount = change.text.split("\n").length - 1;
-    return lineCount > minimumPasteLines;
+    const lineCount = change.text.split("\n").length;
+    return lineCount >= minimumPasteLines;
   }
 
   /**
-   * Handle paste detection - create regions immediately
+   * Heuristic to determine if a paste event is large enough to be a full-file replacement.
+   * This prevents running expensive logic on every small paste.
+   */
+  private isFullFilePaste(
+    document: vscode.TextDocument,
+    change: vscode.TextDocumentContentChangeEvent
+  ): boolean {
+    const totalDocumentLines = document.lineCount;
+    // A paste is considered "full file" if the new content makes up more than 80%
+    // of the final document's lines, indicating a replacement rather than an insertion.
+    const pastedLines = change.text.split("\n").length;
+    const coverageRatio = pastedLines / (totalDocumentLines || 1);
+
+    return coverageRatio > 0.8;
+  }
+
+  /**
+   * Handle paste detection - create regions immediately.
    */
   private handlePaste(
-    documentUri: vscode.Uri,
-    change: vscode.TextDocumentContentChangeEvent
+    document: vscode.TextDocument,
+    change: vscode.TextDocumentContentChangeEvent,
+    oldText?: string,
+    oldRegions?: Region[]
   ): void {
     const { minimumPasteLines } = this.getConfig();
-    const startLine = change.range.start.line;
-    const lineCount = change.text.split("\n").length - 1;
-    const endLine = startLine + lineCount;
+    const documentUri = document.uri;
 
-    // Create lines set for region creation
-    const lines = new Set<number>();
-    for (let line = startLine; line <= endLine; line++) {
-      lines.add(line);
-    }
+    if (
+      ENABLE_REVIEWED_PASTE_CHECK &&
+      oldText !== undefined &&
+      oldRegions !== undefined &&
+      this.isFullFilePaste(document, change)
+    ) {
+      // --- Step 1: Build a Set of contextual keys for all reviewed lines ---
+      const oldDocumentLines = oldText.split("\n");
+      const reviewedContentKeys = new Set<string>();
 
-    // Create regions immediately (no timeout)
-    this.createRegionsFromLines(documentUri, lines, minimumPasteLines);
+      for (let i = 0; i < oldDocumentLines.length; i++) {
+        const isLineInOldRegion = oldRegions.some(
+          (region) => i >= region.startLine && i <= region.endLine
+        );
+        if (!isLineInOldRegion) {
+          const contextualKey = getContextualKey(oldDocumentLines, i);
+          reviewedContentKeys.add(contextualKey);
+        }
+      }
 
-    // Notify that regions were created
-    if (this.onRegionsCreatedCallback) {
-      this.onRegionsCreatedCallback(documentUri);
+      // --- Step 2: Check each pasted line against the Set of reviewed keys ---
+      const linesToHighlight = new Set<number>();
+      const pastedContentLines = change.text.split("\n");
+      const startLineOfPaste = change.range.start.line;
+
+      for (let i = 0; i < pastedContentLines.length; i++) {
+        const contextualKeyInPaste = getContextualKey(pastedContentLines, i);
+
+        // If the key for this line and its context was NOT reviewed before, highlight it.
+        if (!reviewedContentKeys.has(contextualKeyInPaste)) {
+          const currentLineNumber = startLineOfPaste + i;
+          linesToHighlight.add(currentLineNumber);
+        }
+      }
+
+      // --- Step 3: Create regions from the un-reviewed lines ---
+      if (linesToHighlight.size > 0) {
+        this.createRegionsFromLines(documentUri, linesToHighlight, 1);
+        if (this.onRegionsCreatedCallback) {
+          this.onRegionsCreatedCallback(documentUri);
+        }
+      }
+    } else {
+      // --- Fallback to Original, Simple Logic ---
+      const startLine = change.range.start.line;
+
+      const pastedLineCount = change.text.split("\n").length;
+      const endLine = startLine + pastedLineCount - 1;
+      const lines = new Set<number>();
+      for (let line = startLine; line <= endLine; line++) {
+        lines.add(line);
+      }
+
+      this.createRegionsFromLines(documentUri, lines, minimumPasteLines);
+      if (this.onRegionsCreatedCallback) {
+        this.onRegionsCreatedCallback(documentUri);
+      }
     }
   }
 
@@ -125,11 +217,9 @@ export class ChangeTracker {
       clearTimeout(state.timeoutId);
     }
 
-    // Update tracking state
     state.totalCharacters += change.text.length;
     state.lastChangeTime = now;
 
-    // Add affected lines
     const startLine = change.range.start.line;
     const endLine =
       change.range.start.line + change.text.split("\n").length - 1;
@@ -137,7 +227,6 @@ export class ChangeTracker {
       state.affectedLines.add(line);
     }
 
-    // Set timeout to end tracking
     state.timeoutId = setTimeout(() => {
       this.endTracking(docKey, documentUri);
     }, TRACKING_TIMEOUT);
@@ -157,20 +246,17 @@ export class ChangeTracker {
     const speed = duration > 0 ? state.totalCharacters / duration : 0;
     const lineCount = state.affectedLines.size;
 
-    // Check if BOTH thresholds exceeded for fast typing
     if (speed > typingSpeedThreshold && lineCount > minimumStreamingLines) {
       this.createRegionsFromLines(
         documentUri,
         state.affectedLines,
         minimumStreamingLines
       );
-      // Notify that regions were created
       if (this.onRegionsCreatedCallback) {
         this.onRegionsCreatedCallback(documentUri);
       }
     }
 
-    // Reset tracking state
     state.isTracking = false;
     state.totalCharacters = 0;
     state.affectedLines.clear();
@@ -178,8 +264,6 @@ export class ChangeTracker {
 
   /**
    * Create regions from a set of line numbers
-   * Combines consecutive lines into contiguous regions
-   * Only creates regions that meet the minimum size threshold
    */
   private createRegionsFromLines(
     documentUri: vscode.Uri,
@@ -190,7 +274,6 @@ export class ChangeTracker {
       return;
     }
 
-    // Sort lines
     const sortedLines = Array.from(lines).sort((a, b) => a - b);
 
     // Group into contiguous regions
@@ -201,12 +284,10 @@ export class ChangeTracker {
       const currentLine = sortedLines[i];
 
       if (currentLine === regionEnd + 1) {
-        // Extend current region
         regionEnd = currentLine;
       } else {
-        // Save current region if it meets minimum size
         const regionSize = regionEnd - regionStart + 1;
-        if (regionSize > minRegionSize) {
+        if (regionSize >= minRegionSize) {
           this.regionManager.addRegion(documentUri, regionStart, regionEnd);
         }
         regionStart = currentLine;
@@ -216,7 +297,7 @@ export class ChangeTracker {
 
     // Add the last region if it meets minimum size
     const regionSize = regionEnd - regionStart + 1;
-    if (regionSize > minRegionSize) {
+    if (regionSize >= minRegionSize) {
       this.regionManager.addRegion(documentUri, regionStart, regionEnd);
     }
   }

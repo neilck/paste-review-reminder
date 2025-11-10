@@ -1,0 +1,35 @@
+TEST PASTE A
+
+// STEP 1: Copy this entire block and paste it into a new file.
+// EXPECTED: The entire file should be highlighted as un-reviewed.
+
+// STEP 2: "Review" this function by moving your cursor inside this block or selecting it.
+// EXPECTED: The highlight on these lines (10-14) should disappear, 
+//           and remain not highlighted after pasting TEST PASTE B.
+
+function calculateCircleArea(radius) {
+  const PI = 3.14159;
+  const area = PI * radius * radius;
+  return area;
+}
+
+const reportHeader = "--- Calculation Results ---";
+console.log(reportHeader);
+
+// This is an intermediate block of code that will remain un-reviewed.
+// It should be highlighted after both the first and second paste.
+
+const result = calculateCircleArea(10);
+console.log(`The result is: ${result}`);
+
+// STEP 3: "Review" this function by moving your cursor inside this block or selecting it.
+// EXPECTED: The highlight on these lines (29-32) should disappear,
+//           but should be highlighted after paste of TEST PLAN B, as they have changed
+
+function formatGreeting(greeting, target) {
+  console.log("formatGreeting called");  
+  return `${greeting}, ${target}!`;
+}
+
+// STEP 4: Now, with both functions reviewed (un-highlighted),
+// replace the entire file content with "TEST PASTE B".
