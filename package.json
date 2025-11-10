@@ -40,6 +40,12 @@
           "minimum": 1,
           "description": "Characters per second threshold to detect fast typing (for AI completions)"
         },
+        "pasteReviewReminder.autoSaveDelay": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 0,
+          "description": "Delay in milliseconds before auto-saving region changes (default: 3000ms / 3 seconds)"
+        },
         "pasteReviewReminder.highlightColor": {
           "type": "string",
           "default": "rgba(255, 200, 100, 0.15)",

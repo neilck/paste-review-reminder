@@ -12,15 +12,15 @@ const TRACKING_TIMEOUT = 100; // milliseconds
  */
 export class ChangeTracker {
   private trackingStates: Map<string, ChangeTrackingState> = new Map();
-  private onRegionsCreated?: () => void;
+  private onRegionsCreatedCallback?: (uri: vscode.Uri) => void;
 
   constructor(private regionManager: RegionManager) {}
 
   /**
    * Set callback to be called when new regions are created
    */
-  public setOnRegionsCreated(callback: () => void): void {
-    this.onRegionsCreated = callback;
+  public setOnRegionsCreated(callback: (uri: vscode.Uri) => void): void {
+    this.onRegionsCreatedCallback = callback;
   }
 
   /**
@@ -92,7 +92,9 @@ export class ChangeTracker {
     this.createRegionsFromLines(documentUri, lines, minimumPasteLines);
 
     // Notify that regions were created
-    this.onRegionsCreated?.();
+    if (this.onRegionsCreatedCallback) {
+      this.onRegionsCreatedCallback(documentUri);
+    }
   }
 
   /**
@@ -163,7 +165,9 @@ export class ChangeTracker {
         minimumStreamingLines
       );
       // Notify that regions were created
-      this.onRegionsCreated?.();
+      if (this.onRegionsCreatedCallback) {
+        this.onRegionsCreatedCallback(documentUri);
+      }
     }
 
     // Reset tracking state
@@ -220,8 +224,8 @@ export class ChangeTracker {
   /**
    * Stop tracking for a document
    */
-  public stopTracking(document: vscode.Uri): void {
-    const docKey = document.toString();
+  public stopTracking(documentUri: vscode.Uri): void {
+    const docKey = documentUri.toString();
     const state = this.trackingStates.get(docKey);
     if (state?.timeoutId) {
       clearTimeout(state.timeoutId);
