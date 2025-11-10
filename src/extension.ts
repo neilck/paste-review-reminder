@@ -208,9 +208,9 @@ function handleSelectionChange(
       selection.start.line === 0 &&
       selection.end.line === document.lineCount - 1;
 
-    // Ignore very large selections (like Select All)
+    // Ignore Select All
     // Skip if: entire document OR more than 100 lines
-    if (isEntireDocument || selectionLineCount > 100) {
+    if (isEntireDocument) {
       continue;
     }
 
