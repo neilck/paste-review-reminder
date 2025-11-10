@@ -3,16 +3,17 @@ import type { Region } from "./types";
 
 /**
  * Manages regions of pasted or AI-generated code across documents
+ * Uses document URI as Map key, but doesn't store URI in Region objects
  */
 export class RegionManager {
-  private regions: Map<string, Region[]> = new Map(); // key: document URI
+  private regions: Map<string, Region[]> = new Map(); // key: document URI string
   private nextId = 0;
 
   /**
    * Add a new region for the given document
    */
   public addRegion(
-    document: vscode.Uri,
+    documentUri: vscode.Uri,
     startLine: number,
     endLine: number
   ): Region {
@@ -20,10 +21,9 @@ export class RegionManager {
       id: `region-${this.nextId++}`,
       startLine,
       endLine,
-      document,
     };
 
-    const docKey = document.toString();
+    const docKey = documentUri.toString();
     const docRegions = this.regions.get(docKey) || [];
     docRegions.push(region);
     this.regions.set(docKey, docRegions);
@@ -37,10 +37,10 @@ export class RegionManager {
    * Returns true if any regions were modified.
    */
   public removeLinesFromRegions(
-    document: vscode.Uri,
+    documentUri: vscode.Uri,
     range: vscode.Range
   ): boolean {
-    const docKey = document.toString();
+    const docKey = documentUri.toString();
     const docRegions = this.regions.get(docKey);
     if (!docRegions || docRegions.length === 0) {
       return false;
@@ -95,7 +95,6 @@ export class RegionManager {
         id: `region-${this.nextId++}`,
         startLine: region.startLine,
         endLine: removeStart - 1,
-        document: region.document,
       });
     }
 
@@ -105,7 +104,6 @@ export class RegionManager {
         id: `region-${this.nextId++}`,
         startLine: removeEnd + 1,
         endLine: region.endLine,
-        document: region.document,
       });
     }
 
@@ -115,16 +113,16 @@ export class RegionManager {
   /**
    * Get all regions for a document
    */
-  public getRegions(document: vscode.Uri): Region[] {
-    const docKey = document.toString();
+  public getRegions(documentUri: vscode.Uri): Region[] {
+    const docKey = documentUri.toString();
     return this.regions.get(docKey) || [];
   }
 
   /**
    * Clear all regions for a document
    */
-  public clearDocument(document: vscode.Uri): void {
-    this.regions.delete(document.toString());
+  public clearDocument(documentUri: vscode.Uri): void {
+    this.regions.delete(documentUri.toString());
   }
 
   /**
@@ -139,12 +137,12 @@ export class RegionManager {
    * This should be called when lines are added or removed from the document
    */
   public updateRegionsAfterEdit(
-    document: vscode.Uri,
+    documentUri: vscode.Uri,
     range: vscode.Range,
     rangeLength: number,
     text: string
   ): void {
-    const docKey = document.toString();
+    const docKey = documentUri.toString();
     const docRegions = this.regions.get(docKey);
     if (!docRegions || docRegions.length === 0) {
       return;
@@ -176,6 +174,7 @@ export class RegionManager {
 
   /**
    * Update document URI for all regions when a file is renamed
+   * This updates the Map key for runtime state
    */
   public updateDocumentUri(oldUri: vscode.Uri, newUri: vscode.Uri): void {
     const oldKey = oldUri.toString();
@@ -184,11 +183,6 @@ export class RegionManager {
     const regions = this.regions.get(oldKey);
     if (!regions) {
       return;
-    }
-
-    // Update each region's document reference
-    for (const region of regions) {
-      region.document = newUri;
     }
 
     // Move to new key and remove the old entry
@@ -200,10 +194,10 @@ export class RegionManager {
    * Replace regions for a document.
    * Useful when restoring from saved manifest after checksum validation.
    */
-  public setRegionsForDocument(document: vscode.Uri, regions: Region[]): void {
-    this.regions.set(
-      document.toString(),
-      regions.map((r) => ({ ...r, document }))
-    );
+  public setRegionsForDocument(
+    documentUri: vscode.Uri,
+    regions: Region[]
+  ): void {
+    this.regions.set(documentUri.toString(), [...regions]);
   }
 }

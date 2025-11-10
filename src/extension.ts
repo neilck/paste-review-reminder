@@ -101,7 +101,9 @@ function registerEventListeners(context: vscode.ExtensionContext): void {
     vscode.workspace.onWillRenameFiles(async (event) => {
       for (const file of event.files) {
         const { oldUri, newUri } = file;
+        // Update both runtime state and saved manifest
         regionManager.updateDocumentUri(oldUri, newUri);
+        saveManager.updateFilePath(oldUri, newUri);
       }
     })
   );
