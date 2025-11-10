@@ -29,11 +29,6 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  // Set up callback for when regions are created
-  changeTracker.setOnRegionsCreated(() => {
-    decorationManager.updateAllDecorations();
-  });
-
   // Register event listeners
   registerEventListeners(context);
 
@@ -43,7 +38,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const savedRegions = saveManager.getRegions(document.uri);
     if (savedRegions && savedRegions.length > 0) {
-      regionManager.setRegionsForDocument(document.uri, savedRegions);
+      regionManager.restoreRegionsForDocument(document.uri, savedRegions);
     }
   }
 
@@ -136,8 +131,15 @@ function handleDocumentOpen(document: vscode.TextDocument): void {
   const matches = saveManager.hasMatchingChecksum(document.uri, content);
 
   if (matches) {
-    // Restore regions
-    regionManager.setRegionsForDocument(document.uri, savedRegions);
+    // Restore regions without firing events (this is a load operation)
+    regionManager.restoreRegionsForDocument(document.uri, savedRegions);
+    // Manually update decorations since restore doesn't fire event
+    const editors = vscode.window.visibleTextEditors.filter(
+      (editor) => editor.document.uri.toString() === document.uri.toString()
+    );
+    for (const editor of editors) {
+      decorationManager.updateDecorations(editor);
+    }
   } else {
     // Checksum mismatch → remove regions immediately
     regionManager.clearDocument(document.uri);
@@ -164,17 +166,10 @@ function handleTextDocumentChange(event: vscode.TextDocumentChangeEvent): void {
 
   // STEP 1: Remove lines from regions for modifications/deletions
   // This must happen BEFORE tracking new changes
-  let regionsModified = false;
   for (const change of event.contentChanges) {
     // For any change (addition, deletion, or modification), remove affected lines from regions
     // This handles both line modifications and deletions
-    const wasModified = regionManager.removeLinesFromRegions(
-      document.uri,
-      change.range
-    );
-    if (wasModified) {
-      regionsModified = true;
-    }
+    regionManager.removeLinesFromRegions(document.uri, change.range);
 
     // Update region line numbers if lines were added/removed
     regionManager.updateRegionsAfterEdit(
@@ -189,16 +184,9 @@ function handleTextDocumentChange(event: vscode.TextDocumentChangeEvent): void {
   // This happens AFTER region removal to avoid immediate deletion
   changeTracker.processChange(event);
 
-  // STEP 3: Update decorations if regions were modified
-  if (regionsModified) {
-    const editor = vscode.window.activeTextEditor;
-    if (editor && editor.document === document) {
-      decorationManager.updateDecorations(editor);
-    }
-  }
-
-  // Note: New regions from tracking will be created after the timeout,
-  // and decorations will be updated via the callback mechanism
+  // Note: Decorations are automatically updated via regionManager events
+  // New regions from tracking will be created after the timeout,
+  // and decorations will be updated via the event mechanism
 }
 
 /**
@@ -211,16 +199,14 @@ function handleSelectionChange(
   const editor = event.textEditor;
   const document = editor.document;
 
-  let regionsModified = false;
-
   for (const selection of event.selections) {
     const selectionLineCount = selection.end.line - selection.start.line + 1;
     const isEntireDocument =
       selection.start.line === 0 &&
       selection.end.line === document.lineCount - 1;
 
-    // Ignore Select All
-    // Skip if: entire document OR more than 100 lines
+    // Ignore very large selections (like Select All)
+    // Skip if: entire document
     if (isEntireDocument) {
       continue;
     }
@@ -233,18 +219,10 @@ function handleSelectionChange(
       Number.MAX_SAFE_INTEGER
     );
 
-    const wasModified = regionManager.removeLinesFromRegions(
-      document.uri,
-      range
-    );
-    if (wasModified) {
-      regionsModified = true;
-    }
+    regionManager.removeLinesFromRegions(document.uri, range);
   }
 
-  if (regionsModified) {
-    decorationManager.updateDecorations(editor);
-  }
+  // Note: Decorations are automatically updated via regionManager events
 }
 
 function registerCommands(context: vscode.ExtensionContext): void {
@@ -276,28 +254,22 @@ function dismissRegion(documentUri: vscode.Uri, regionId: string): void {
   const regions = regionManager.getRegions(documentUri);
   const filteredRegions = regions.filter((r) => r.id !== regionId);
 
-  // Update regions
+  // Update regions (this will fire event and update decorations automatically)
   regionManager.setRegionsForDocument(documentUri, filteredRegions);
 
-  // Update decorations
-  const editor = vscode.window.activeTextEditor;
-  if (editor && editor.document.uri.toString() === documentUri.toString()) {
-    decorationManager.updateDecorations(editor);
-  }
+  // Save to manifest
+  saveManager.saveFileRegions(documentUri, filteredRegions);
 }
 
 /**
  * Dismiss all regions for a document
  */
 function dismissAllRegions(documentUri: vscode.Uri): void {
-  // Clear all regions
+  // Clear all regions (this will fire event and update decorations automatically)
   regionManager.clearDocument(documentUri);
 
-  // Update decorations
-  const editor = vscode.window.activeTextEditor;
-  if (editor && editor.document.uri.toString() === documentUri.toString()) {
-    decorationManager.updateDecorations(editor);
-  }
+  // Save empty regions to manifest
+  saveManager.saveFileRegions(documentUri, []);
 }
 
 export function deactivate(): void {

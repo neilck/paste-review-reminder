@@ -227,6 +227,17 @@ export class RegionManager {
   }
 
   /**
+   * Restore regions for a document without firing events.
+   * Used when loading regions from manifest on startup/file open.
+   */
+  public restoreRegionsForDocument(
+    documentUri: vscode.Uri,
+    regions: Region[]
+  ): void {
+    this.regions.set(documentUri.toString(), [...regions]);
+  }
+
+  /**
    * Dispose of resources
    */
   public dispose(): void {
