@@ -3,11 +3,13 @@ import { RegionManager } from "./regionManager";
 import { SaveManager } from "./saveManager";
 import { ChangeTracker } from "./changeTracker";
 import { DecorationManager } from "./decorationManager";
+import { RegionCodeLensProvider } from "./codeLensProvider";
 
 let regionManager: RegionManager;
 let saveManager: SaveManager;
 let changeTracker: ChangeTracker;
 let decorationManager: DecorationManager;
+let codeLensProvider: RegionCodeLensProvider;
 
 export function activate(context: vscode.ExtensionContext): void {
   console.log("Paste Review Reminder extension activated");
@@ -17,6 +19,15 @@ export function activate(context: vscode.ExtensionContext): void {
   saveManager = new SaveManager(context);
   changeTracker = new ChangeTracker(regionManager);
   decorationManager = new DecorationManager(regionManager);
+  codeLensProvider = new RegionCodeLensProvider(regionManager);
+
+  // Register CodeLens provider for all file types
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { scheme: "file" },
+      codeLensProvider
+    )
+  );
 
   // Set up callback for when regions are created
   changeTracker.setOnRegionsCreated(() => {
@@ -237,19 +248,62 @@ function handleSelectionChange(
 }
 
 function registerCommands(context: vscode.ExtensionContext): void {
-  // Register dismiss command (for future CodeLens integration)
+  // Register dismiss region command
   context.subscriptions.push(
-    vscode.commands.registerCommand("pasteReviewReminder.dismissRegion", () => {
-      // This will be implemented when CodeLens is added
-      vscode.window.showInformationMessage(
-        "Region dismiss feature coming soon!"
-      );
-    })
+    vscode.commands.registerCommand(
+      "pasteReviewReminder.dismissRegion",
+      (documentUri: vscode.Uri, regionId: string) => {
+        dismissRegion(documentUri, regionId);
+      }
+    )
   );
+
+  // Register dismiss all command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "pasteReviewReminder.dismissAll",
+      (documentUri: vscode.Uri) => {
+        dismissAllRegions(documentUri);
+      }
+    )
+  );
+}
+
+/**
+ * Dismiss a specific region
+ */
+function dismissRegion(documentUri: vscode.Uri, regionId: string): void {
+  const regions = regionManager.getRegions(documentUri);
+  const filteredRegions = regions.filter((r) => r.id !== regionId);
+
+  // Update regions
+  regionManager.setRegionsForDocument(documentUri, filteredRegions);
+
+  // Update decorations
+  const editor = vscode.window.activeTextEditor;
+  if (editor && editor.document.uri.toString() === documentUri.toString()) {
+    decorationManager.updateDecorations(editor);
+  }
+}
+
+/**
+ * Dismiss all regions for a document
+ */
+function dismissAllRegions(documentUri: vscode.Uri): void {
+  // Clear all regions
+  regionManager.clearDocument(documentUri);
+
+  // Update decorations
+  const editor = vscode.window.activeTextEditor;
+  if (editor && editor.document.uri.toString() === documentUri.toString()) {
+    decorationManager.updateDecorations(editor);
+  }
 }
 
 export function deactivate(): void {
   changeTracker?.clearAll();
   regionManager?.clearAll();
+  regionManager?.dispose();
   decorationManager?.dispose();
+  codeLensProvider?.dispose();
 }

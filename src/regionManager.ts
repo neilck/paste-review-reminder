@@ -1,13 +1,20 @@
-import type * as vscode from "vscode";
+import * as vscode from "vscode";
 import type { Region } from "./types";
 
 /**
  * Manages regions of pasted or AI-generated code across documents
  * Uses document URI as Map key, but doesn't store URI in Region objects
+ * Emits events when regions change for reactive updates
  */
 export class RegionManager {
   private regions: Map<string, Region[]> = new Map(); // key: document URI string
   private nextId = 0;
+  private _onDidChangeRegions = new vscode.EventEmitter<vscode.Uri>();
+
+  /**
+   * Event fired when regions change for a document
+   */
+  public readonly onDidChangeRegions = this._onDidChangeRegions.event;
 
   /**
    * Add a new region for the given document
@@ -27,6 +34,8 @@ export class RegionManager {
     const docRegions = this.regions.get(docKey) || [];
     docRegions.push(region);
     this.regions.set(docKey, docRegions);
+
+    this._onDidChangeRegions.fire(documentUri);
 
     return region;
   }
@@ -63,6 +72,11 @@ export class RegionManager {
     }
 
     this.regions.set(docKey, newRegions);
+
+    if (modified) {
+      this._onDidChangeRegions.fire(documentUri);
+    }
+
     return modified;
   }
 
@@ -122,7 +136,14 @@ export class RegionManager {
    * Clear all regions for a document
    */
   public clearDocument(documentUri: vscode.Uri): void {
-    this.regions.delete(documentUri.toString());
+    const docKey = documentUri.toString();
+    const hadRegions =
+      this.regions.has(docKey) && this.regions.get(docKey)!.length > 0;
+    this.regions.delete(docKey);
+
+    if (hadRegions) {
+      this._onDidChangeRegions.fire(documentUri);
+    }
   }
 
   /**
@@ -199,5 +220,16 @@ export class RegionManager {
     regions: Region[]
   ): void {
     this.regions.set(documentUri.toString(), [...regions]);
+
+    if (regions.length > 0) {
+      this._onDidChangeRegions.fire(documentUri);
+    }
+  }
+
+  /**
+   * Dispose of resources
+   */
+  public dispose(): void {
+    this._onDidChangeRegions.dispose();
   }
 }
