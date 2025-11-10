@@ -8,10 +8,6 @@ import type { ChangeTracker } from "../changeTracker";
 import type { DecorationManager } from "../decorationManager";
 import type { ShadowTextManager } from "./shadowTextManager"; // [NEW] Import the new manager
 
-// [NEW] Feature flag for the new functionality.
-// We will use this later in changeTracker.ts. For now, it's just declared here.
-export const ENABLE_REVIEWED_PASTE_CHECK = true;
-
 /**
  * Registers and handles all document and editor events
  */

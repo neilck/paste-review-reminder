@@ -22,6 +22,11 @@
     "configuration": {
       "title": "Paste Review Reminder",
       "properties": {
+        "pasteReviewReminder.enableIntelligentPaste": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, pasting a large block of code (like a full file) will intelligently skip re-highlighting lines that you have already reviewed."
+        },
         "pasteReviewReminder.minimumPasteLines": {
           "type": "number",
           "default": 20,

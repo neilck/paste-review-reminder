@@ -4,8 +4,6 @@ import * as vscode from "vscode";
 import { Region } from "./types";
 import type { ChangeTrackingState } from "./types";
 import type { RegionManager } from "./regionManager";
-import { ENABLE_REVIEWED_PASTE_CHECK } from "./extension-helpers/eventHandlers"; // [NEW] Import the feature flag
-import { start } from "repl";
 
 const TRACKING_TIMEOUT = 100; // milliseconds
 
@@ -58,6 +56,10 @@ export class ChangeTracker {
   private getConfig() {
     const config = vscode.workspace.getConfiguration("pasteReviewReminder");
     return {
+      enableIntelligentPaste: config.get<boolean>(
+        "enableIntelligentPaste",
+        true
+      ),
       minimumPasteLines: config.get<number>("minimumPasteLines", 20),
       minimumStreamingLines: config.get<number>("minimumStreamingLines", 20),
       typingSpeedThreshold: config.get<number>("typingSpeedThreshold", 110),
@@ -82,7 +84,7 @@ export class ChangeTracker {
       }
 
       if (this.isPaste(change)) {
-        // [UPDATED] Pass the document object, oldText, and oldRegions snapshot to the handler
+        // Pass the document object, oldText, and oldRegions snapshot to the handler
         this.handlePaste(document, change, oldText, oldRegions);
         continue;
       }
@@ -126,11 +128,11 @@ export class ChangeTracker {
     oldText?: string,
     oldRegions?: Region[]
   ): void {
-    const { minimumPasteLines } = this.getConfig();
+    const { minimumPasteLines, enableIntelligentPaste } = this.getConfig();
     const documentUri = document.uri;
 
     if (
-      ENABLE_REVIEWED_PASTE_CHECK &&
+      enableIntelligentPaste &&
       oldText !== undefined &&
       oldRegions !== undefined &&
       this.isFullFilePaste(document, change)

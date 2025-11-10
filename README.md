@@ -18,10 +18,11 @@ Here's how Paste Review Reminder highlights areas for review in your editor:
 
 - **Code Block Tracking:** Automatically tracks pasted or AI-generated code blocks in your workspace.
 - **Decorations:** Highlights tracked blocks in the editor for quick identification.
-- **Line Change Awareness:** Lines are un-highlighted when touched (clicked, selected).
-- **Per-File Storage:** Saves blocks per file to file (`.pastereview.json`), allowing Git versioning.
-- **Checksum Validation:** Ensures saved blocks correspond to the current file content.
-- **Git-Friendly:** The saved manifest can be committed to source control.
+- **Line Change Awareness:** Lines are un-highlighted when touched by the cursor (clicked, selected).
+- **Intelligent Paste Detection:** When re-pasting a large block (like a full file), the extension intelligently skips re-highlighting code that you have already reviewed, even if its position has changed.
+- **Per-File Storage:** Saves blocks per file to a manifest (`.pastereview.json`), allowing Git versioning.
+- **Checksum Validation:** Ensures saved blocks correspond to the current file content, preventing stale highlights.
+- **Git-Friendly:** The saved manifest can be committed to source control to share review status with your team.
 
 ---
 
@@ -51,7 +52,36 @@ This path tracks continuous, rapid changes over a short duration, which is chara
 1. Paste or generate code in your files.
 2. The extension automatically tracks the new blocks.
 3. Tracked blocks are highlighted in the editor.
-4. Touched lines are unhighlighted.
+4. Move your cursor to a highlighted line or select a block of lines to mark them as "reviewed" and remove the highlight.
+5. If you re-paste a file, previously reviewed sections will remain un-highlighted.
+
+---
+
+## Configuration
+
+You can customize the extension via **Settings** (`Cmd+,` on Mac, `Ctrl+,` on Windows/Linux) under **Paste Review Reminder**. Available configuration options:
+
+- **Enable Intelligent Paste (`pasteReviewReminder.enableIntelligentPaste`)**
+  When enabled, pasting a large block of code (like a full file) will intelligently skip re-highlighting lines that you have already reviewed. Default: `true`.
+
+- **Minimum Paste Lines (`pasteReviewReminder.minimumPasteLines`)**
+  Minimum number of lines in a paste to trigger block highlighting. Default: `20`.
+
+- **Minimum Streaming Lines (`pasteReviewReminder.minimumStreamingLines`)**
+  Minimum number of lines typed quickly (or streamed from AI completions) to trigger block highlighting. Default: `20`.
+
+- **Typing Speed Threshold (`pasteReviewReminder.typingSpeedThreshold`)**
+  Characters per second threshold to detect fast typing for AI completions. Default: `110`.
+
+- **Highlight Color (`pasteReviewReminder.highlightColor`)**
+  Background color used to highlight blocks. _Note: This setting may not be implemented yet._ Default: `rgba(255, 200, 100, 0.15)`.
+
+---
+
+## Storage
+
+- **Manifest file:** `.pastereview.json` (created in your workspace root)
+- Stores per-file blocks with checksums to detect content changes and prevent stale highlights.
 
 ---
 
@@ -94,25 +124,4 @@ Once the `.vsix` file is built, you can install it into VS Code without going th
     ```bash
     code --install-extension /path/to/paste-review-reminder-0.0.1.vsix
     ```
-3.  Open the VS Code Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`) and run **`Developer: Reload Window`** to activate the extension.
-
----
-
-## Storage
-
-- Manifest file: `.pastereview.json` (workspace root)
-- Stores per-file blocks with checksums to detect content changes.
-
----
-
-## Configuration
-
-You can customize the extension via **Settings** (`Cmd+,` on Mac, `Ctrl+,` on Windows/Linux) under **Paste Review Reminder**. Available configuration options:
-
-- **Minimum Paste Lines (`pasteReviewReminder.minimumPasteLines`)** Minimum number of lines in a paste to trigger block highlighting. Default: `20`.
-
-- **Minimum Streaming Lines (`pasteReviewReminder.minimumStreamingLines`)** Minimum number of lines typed quickly (or streamed from AI completions) to trigger block highlighting. Default: `20`.
-
-- **Typing Speed Threshold (`pasteReviewReminder.typingSpeedThreshold`)** Characters per second threshold to detect fast typing for AI completions. Default: `110`.
-
-- **Highlight Color (`pasteReviewReminder.highlightColor`)** Background color used to highlight blocks. Default: `rgba(255, 200, 100, 0.15)`.
+3.  Open the VS Code Command Palette (`Ctrl+Shift+P` or `Cmd+ShiftP`) and run **`Developer: Reload Window`** to activate the extension.
